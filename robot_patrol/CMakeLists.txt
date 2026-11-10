@@ -11,7 +11,6 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(tf2 REQUIRED)
 
 # Create executables
 add_executable(patrol_executable src/patrol.cpp)
@@ -21,7 +20,6 @@ ament_target_dependencies(patrol_executable
 	rclcpp
 	sensor_msgs
 	nav_msgs
-	tf2
 	geometry_msgs)
 
 # Install executables
