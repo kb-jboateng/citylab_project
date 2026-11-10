@@ -2,6 +2,9 @@
 #include "rclcpp/qos.hpp"
 #include "geometry_msgs/msg/detail/twist__struct.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
+#include "algorithm"
+#include "cmath"
+#include "limits"
 
 class Patrol : public rclcpp::Node
 {
@@ -24,8 +27,12 @@ class Patrol : public rclcpp::Node
 
         void laserscan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
         {
-            float min_left  = std::numeric_limits<float>::infinity();
-            float min_right = std::numeric_limits<float>::infinity();
+            const double front_half_angle = 20.0 * M_PI / 180.0;
+            const float obstacle_dist = 0.35f;
+
+            float min_front = std::numeric_limits<float>::infinity();
+            float max_range = 0.0f;
+            double max_angle = 0.0;
 
             for (size_t i = 0; i < msg->ranges.size(); ++i)
             {
@@ -39,13 +46,17 @@ class Patrol : public rclcpp::Node
                 if (!std::isfinite(r) || r < msg->range_min || r > msg->range_max)
                     continue;
 
-                if (angle >= 0.0)
-                    min_left = std::min(min_left, r);
-                else
-                    min_right = std::min(min_right, r);
+                if (std::abs(angle) <= front_half_angle)
+                    min_front = std::min(min_front, r);
+
+                if (r > max_range)
+                {
+                    max_range = r;
+                    max_angle = angle;
+                }
             }
         }
-        
+
 };
 
 int main(int argc, char **argv)
