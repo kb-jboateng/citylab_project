@@ -1,6 +1,12 @@
+#include <chrono>
 #include <rclcpp/rclcpp.hpp>
+#include "rclcpp/callback_group.hpp"
+#include "rclcpp/executor_options.hpp"
+#include "rclcpp/executors/multi_threaded_executor.hpp"
+#include "rclcpp/logging.hpp"
 #include "rclcpp/qos.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "rclcpp/subscription_options.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include <algorithm>
 #include <cmath>
@@ -14,18 +20,34 @@ class Patrol : public rclcpp::Node
         {
             auto qos = rclcpp::QoS(10).reliability(rclcpp::ReliabilityPolicy::Reliable);
 
+            // Create callback group
+            callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+            rclcpp::SubscriptionOptions sub_options;
+            sub_options.callback_group = callback_group_;
+
             // Create laser subscriber
             laser_subsriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
                 "/fastbot_1/scan",
                 qos,
-                std::bind(&Patrol::laserscan_callback, this, std::placeholders::_1)
+                std::bind(&Patrol::laserscan_callback, this, std::placeholders::_1),
+                sub_options
             );
 
             // Create movement publisher
             publisher_ = this->create_publisher<geometry_msgs::msg::Twist>("/fastbot_1/cmd_vel", 10);
+
+            // Create control callback loop at 10Hz
+            timer_ = this->create_wall_timer(
+                std::chrono::milliseconds(100), std::bind(&Patrol::control_callback, this),
+                callback_group_);
         }
 
     private:
+        double max_angle_ = 0.0;
+        const float obstacle_threshold_ = 0.35f;
+        float min_front_ = std::numeric_limits<float>::infinity();
+        rclcpp::TimerBase::SharedPtr timer_;
+        rclcpp::CallbackGroup::SharedPtr callback_group_;
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
         rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_subsriber_;
 
@@ -33,11 +55,10 @@ class Patrol : public rclcpp::Node
         void laserscan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
         {
             const double front_half_angle = 20.0 * M_PI / 180.0;
-            const float obstacle_threshold = 0.35f;
 
-            float min_front = std::numeric_limits<float>::infinity();
             float max_range = 0.0f;
-            double max_angle = 0.0;
+            max_angle_ = 0.0;
+            min_front_ = std::numeric_limits<float>::infinity();
 
             for (size_t i = 0; i < msg->ranges.size(); ++i)
             {
@@ -52,19 +73,28 @@ class Patrol : public rclcpp::Node
                     continue;
 
                 if (std::abs(angle) <= front_half_angle)
-                    min_front = std::min(min_front, r);
+                    min_front_ = std::min(min_front_, r);
 
                 if (r > max_range)
                 {
                     max_range = r;
-                    max_angle = angle;
+                    max_angle_ = angle;
+
+                    RCLCPP_INFO(this->get_logger(), "Max angle from laser callbackk %2.f", max_angle_);
                 }
+                RCLCPP_INFO(this->get_logger(), "Min front from laser callbackk %2.f", min_front_);
             }
 
-            if (min_front >= obstacle_threshold) 
+        }
+
+        void control_callback()
+        {
+            RCLCPP_INFO(this->get_logger(), "Max angle from control callbackk %2.f", max_angle_);
+            RCLCPP_INFO(this->get_logger(), "Min front from control callbackk %2.f", min_front_);
+            if (min_front_ >= obstacle_threshold_) 
                 this->move_robot("forward");
             else
-                this->move_robot(max_angle > 0.0 ? "left" : "right");
+                this->move_robot(max_angle_ > 0.0 ? "left" : "right");
         }
 
         void move_robot(const std::string move)
@@ -93,7 +123,19 @@ int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<Patrol>();
-    rclcpp::spin(node);
+
+    rclcpp::executors::MultiThreadedExecutor executor(
+        rclcpp::ExecutorOptions(), 2
+    );
+
+    executor.add_node(node);
+
+    try {
+        executor.spin();
+    } catch (const std::exception &e) {
+        RCLCPP_ERROR(node->get_logger(), "Exception: %s", e.what());
+    }
+
     rclcpp::shutdown();
     return 0;
 }
