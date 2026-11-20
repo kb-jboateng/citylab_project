@@ -79,18 +79,13 @@ class Patrol : public rclcpp::Node
                 {
                     max_range = r;
                     max_angle_ = angle;
-
-                    RCLCPP_INFO(this->get_logger(), "Max angle from laser callbackk %2.f", max_angle_);
                 }
-                RCLCPP_INFO(this->get_logger(), "Min front from laser callbackk %2.f", min_front_);
             }
 
         }
 
         void control_callback()
         {
-            RCLCPP_INFO(this->get_logger(), "Max angle from control callbackk %2.f", max_angle_);
-            RCLCPP_INFO(this->get_logger(), "Min front from control callbackk %2.f", min_front_);
             if (min_front_ >= obstacle_threshold_) 
                 this->move_robot("forward");
             else
