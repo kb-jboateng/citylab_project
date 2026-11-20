@@ -27,14 +27,14 @@ class Patrol : public rclcpp::Node
 
             // Create laser subscriber
             laser_subsriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-                "/fastbot_1/scan",
+                "/scan",
                 qos,
                 std::bind(&Patrol::laserscan_callback, this, std::placeholders::_1),
                 sub_options
             );
 
             // Create movement publisher
-            publisher_ = this->create_publisher<geometry_msgs::msg::Twist>("/fastbot_1/cmd_vel", 10);
+            publisher_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
 
             // Create control callback loop at 10Hz
             timer_ = this->create_wall_timer(
