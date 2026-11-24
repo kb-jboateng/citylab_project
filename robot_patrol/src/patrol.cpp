@@ -3,6 +3,7 @@
 #include "rclcpp/callback_group.hpp"
 #include "rclcpp/executor_options.hpp"
 #include "rclcpp/executors/multi_threaded_executor.hpp"
+#include "rclcpp/executors/single_threaded_executor.hpp"
 #include "rclcpp/logging.hpp"
 #include "rclcpp/qos.hpp"
 #include "geometry_msgs/msg/twist.hpp"
@@ -21,12 +22,12 @@ class Patrol : public rclcpp::Node
             auto qos = rclcpp::QoS(10).reliability(rclcpp::ReliabilityPolicy::Reliable);
 
             // Create callback group
-            callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+            callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
             rclcpp::SubscriptionOptions sub_options;
             sub_options.callback_group = callback_group_;
 
             // Create laser subscriber
-            laser_subsriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+            laser_subscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
                 "/fastbot_1/scan",
                 qos,
                 std::bind(&Patrol::laserscan_callback, this, std::placeholders::_1),
@@ -44,12 +45,13 @@ class Patrol : public rclcpp::Node
 
     private:
         double max_angle_ = 0.0;
+        bool has_scanned_ = false;
         const float obstacle_threshold_ = 0.35f;
         float min_front_ = std::numeric_limits<float>::infinity();
         rclcpp::TimerBase::SharedPtr timer_;
         rclcpp::CallbackGroup::SharedPtr callback_group_;
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
-        rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_subsriber_;
+        rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_subscriber_;
 
 
         void laserscan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
@@ -82,10 +84,13 @@ class Patrol : public rclcpp::Node
                 }
             }
 
+            has_scanned_ = true;
         }
 
         void control_callback()
         {
+            if (!has_scanned_) return;
+
             if (min_front_ >= obstacle_threshold_) 
                 this->move_robot("forward");
             else
@@ -119,17 +124,7 @@ int main(int argc, char **argv)
     rclcpp::init(argc, argv);
     auto node = std::make_shared<Patrol>();
 
-    rclcpp::executors::MultiThreadedExecutor executor(
-        rclcpp::ExecutorOptions(), 2
-    );
-
-    executor.add_node(node);
-
-    try {
-        executor.spin();
-    } catch (const std::exception &e) {
-        RCLCPP_ERROR(node->get_logger(), "Exception: %s", e.what());
-    }
+    rclcpp::spin(node);
 
     rclcpp::shutdown();
     return 0;
